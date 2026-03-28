@@ -128,6 +128,11 @@ export class AntichessGame {
 
     const move: Move = { from: fromSq, to: toSq, promotion };
 
+    // Validate move is legal before playing
+    if (!this.pos.isLegal(move)) {
+      return { success: false, san: "" };
+    }
+
     // Check if this captures a piece
     const targetPiece = this.pos.board.get(toSq);
     if (targetPiece) {

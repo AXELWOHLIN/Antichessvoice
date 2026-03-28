@@ -61,7 +61,7 @@ If you cannot determine the move, respond with: {"error": "Could not understand 
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: process.env.XAI_MODEL || "grok-3-mini",
+        model: process.env.XAI_MODEL || "grok-4-1-fast-non-reasoning",
         messages: [{ role: "user", content: prompt }],
         temperature: 0,
       }),
