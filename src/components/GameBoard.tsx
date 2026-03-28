@@ -101,51 +101,58 @@ export default function GameBoard() {
     return true;
   }
 
-  // Handle voice move interpretation
+  // Process a text/voice command through the LLM
+  const processCommand = useCallback(
+    (text: string) => {
+      const currentGame = gameRef.current;
+      if (currentGame.isGameOver() || currentGame.getTurn() !== playerColor) return;
+
+      setIsProcessingVoice(true);
+      setVoiceError(null);
+
+      const state = currentGame.getState();
+
+      interpretVoiceMove(text, state.fen, state.legalMoves)
+        .then((result) => {
+          if (result.error) {
+            setVoiceError(result.error);
+            speak("I didn't understand that move. Please try again.");
+            return;
+          }
+
+          const cloned = currentGame.clone();
+          const moveResult = cloned.makeMove(
+            result.from,
+            result.to,
+            result.promotion as Role | undefined
+          );
+
+          if (!moveResult.success) {
+            setVoiceError("That move is not valid.");
+            speak("That move is not valid. Please try again.");
+            return;
+          }
+
+          setLastMove({ from: result.from, to: result.to });
+          setGame(cloned);
+          updateState(cloned);
+          setTimeout(() => makeAiMove(cloned), 500);
+        })
+        .catch(() => {
+          setVoiceError("Failed to connect to AI. Check your API key.");
+        })
+        .finally(() => {
+          setIsProcessingVoice(false);
+        });
+    },
+    [playerColor, makeAiMove, updateState]
+  );
+
+  // Handle voice transcript
   useEffect(() => {
     if (!transcript || isListening || isProcessingVoice) return;
-
-    const currentGame = gameRef.current;
-    if (currentGame.isGameOver() || currentGame.getTurn() !== playerColor) return;
-
-    setIsProcessingVoice(true);
-    setVoiceError(null);
-
-    const state = currentGame.getState();
-
-    interpretVoiceMove(transcript, state.fen, state.legalMoves)
-      .then((result) => {
-        if (result.error) {
-          setVoiceError(result.error);
-          speak("I didn't understand that move. Please try again.");
-          return;
-        }
-
-        const cloned = currentGame.clone();
-        const moveResult = cloned.makeMove(
-          result.from,
-          result.to,
-          result.promotion as Role | undefined
-        );
-
-        if (!moveResult.success) {
-          setVoiceError("That move is not valid.");
-          speak("That move is not valid. Please try again.");
-          return;
-        }
-
-        setLastMove({ from: result.from, to: result.to });
-        setGame(cloned);
-        updateState(cloned);
-        setTimeout(() => makeAiMove(cloned), 500);
-      })
-      .catch(() => {
-        setVoiceError("Failed to connect to AI. Check your API key.");
-      })
-      .finally(() => {
-        setIsProcessingVoice(false);
-      });
-  }, [transcript, isListening, isProcessingVoice, playerColor, makeAiMove, updateState]);
+    processCommand(transcript);
+  }, [transcript, isListening, isProcessingVoice, processCommand]);
 
   // If AI plays first (player is black)
   useEffect(() => {
@@ -200,6 +207,7 @@ export default function GameBoard() {
           isListening={isListening}
           onStartListening={startListening}
           onStopListening={stopListening}
+          onTextSubmit={processCommand}
           transcript={transcript}
           error={voiceError || speechError}
           isSupported={isSupported}
