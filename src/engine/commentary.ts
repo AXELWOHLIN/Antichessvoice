@@ -14,10 +14,7 @@ export function fetchAndSpeakCommentary(
     .then((res) => res.json())
     .then((data) => {
       if (data.commentary) {
-        // Cancel any pending speech so commentary doesn't pile up
-        if (typeof window !== "undefined" && window.speechSynthesis) {
-          window.speechSynthesis.cancel();
-        }
+        // Queue commentary after any pending speech (e.g. move announcement)
         speak(data.commentary);
       }
     })

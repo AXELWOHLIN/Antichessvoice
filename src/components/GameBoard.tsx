@@ -6,7 +6,7 @@ import { AntichessGame, type GameState } from "@/engine/antichess";
 import { findBestMove } from "@/engine/ai";
 import { interpretVoiceMove } from "@/engine/llm";
 import { fetchAndSpeakCommentary } from "@/engine/commentary";
-import { useSpeechRecognition, speak } from "@/hooks/useSpeechRecognition";
+import { useSpeechRecognition, speak, unlockSpeech } from "@/hooks/useSpeechRecognition";
 import VoiceControl from "./VoiceControl";
 import MoveHistory from "./MoveHistory";
 import GameStatus from "./GameStatus";
@@ -80,6 +80,7 @@ export default function GameBoard() {
   // Handle 3D board moves (click-to-move)
   const onMove = useCallback(
     (from: string, to: string, promotion?: Role): boolean => {
+      unlockSpeech(); // Unlock iOS speechSynthesis on first user interaction
       if (gameState.isGameOver) return false;
       if (gameState.turn !== playerColor) return false;
 
@@ -107,6 +108,7 @@ export default function GameBoard() {
   // Process a text/voice command through the LLM
   const processCommand = useCallback(
     (text: string) => {
+      unlockSpeech(); // Unlock iOS speechSynthesis on first user interaction
       const currentGame = gameRef.current;
       if (currentGame.isGameOver() || currentGame.getTurn() !== playerColor) return;
 

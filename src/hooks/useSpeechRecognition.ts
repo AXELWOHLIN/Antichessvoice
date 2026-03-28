@@ -111,10 +111,27 @@ export function useSpeechRecognition(): SpeechRecognitionHook {
   };
 }
 
+// Track whether speechSynthesis has been unlocked by a user gesture (iOS requirement)
+let speechUnlocked = false;
+
+/**
+ * Call this from any click/tap handler to unlock speechSynthesis on iOS.
+ * iOS Safari requires a user gesture to allow speech output.
+ */
+export function unlockSpeech(): void {
+  if (speechUnlocked) return;
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
+  const utterance = new SpeechSynthesisUtterance("");
+  utterance.volume = 0;
+  window.speechSynthesis.speak(utterance);
+  speechUnlocked = true;
+}
+
 export function speak(text: string): void {
   if (typeof window === "undefined" || !window.speechSynthesis) return;
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = 1;
   utterance.pitch = 1;
+  utterance.volume = 1;
   window.speechSynthesis.speak(utterance);
 }
