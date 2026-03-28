@@ -33,7 +33,7 @@ export async function POST(request: NextRequest) {
     .map((m) => `${m.san} (${m.from}->${m.to}${m.promotion ? " promote to " + m.promotion : ""})`)
     .join(", ");
 
-  const prompt = `You are a chess move interpreter for an antichess game. The player spoke a move using their voice. Your job is to figure out which legal move they meant.
+  const prompt = `You are a chess move interpreter for an antichess game. The player spoke a move using their voice. Your job is to figure out which legal move they meant and ALWAYS return a valid move.
 
 Board state (FEN): ${fen}
 
@@ -43,15 +43,17 @@ The player said: "${transcript}"
 
 Rules of antichess: Captures are mandatory. The goal is to lose all your pieces. The king has no special status.
 
-Based on what the player said, which legal move did they mean? Consider that:
-- "horse" or "horsey" means knight
-- They might say square names like "e4" or "e 4" or "echo 4"
-- They might say piece names like "pawn", "bishop", "rook", "queen", "king", "knight"
-- They might say "take" or "capture" meaning a capture move
-- They might describe moves informally like "move my pawn forward"
+Instructions:
+1. Try to match the player's words to a legal move. Consider:
+   - "horse" or "horsey" means knight
+   - Square names like "e4" or "e 4" or "echo 4"
+   - Piece names like "pawn", "bishop", "rook", "queen", "king", "knight"
+   - "take" or "capture" meaning a capture move
+   - Informal descriptions like "move my pawn forward"
+2. If the player gives a vague command like "win the game", "make a good move", "you choose", "just play", or anything that isn't a specific move, then YOU choose the best strategic move from the legal moves list. In antichess the goal is to LOSE all your pieces, so pick a move that helps achieve that.
+3. NEVER return an error. ALWAYS return a valid move from the legal moves list.
 
-Respond with ONLY a JSON object (no markdown, no code blocks): {"from": "e2", "to": "e4"} or {"from": "a7", "to": "a8", "promotion": "queen"} if it's a promotion.
-If you cannot determine the move, respond with: {"error": "Could not understand the move"}`;
+Respond with ONLY a JSON object (no markdown, no code blocks): {"from": "e2", "to": "e4"} or {"from": "a7", "to": "a8", "promotion": "queen"} if it's a promotion.`;
 
   try {
     const response = await fetch("https://api.x.ai/v1/chat/completions", {
@@ -85,13 +87,16 @@ If you cannot determine the move, respond with: {"error": "Could not understand 
       );
     }
 
-    const parsed = JSON.parse(content);
-
-    if (parsed.error) {
-      return NextResponse.json(parsed, { status: 422 });
+    let parsed;
+    try {
+      parsed = JSON.parse(content);
+    } catch {
+      // If LLM response isn't valid JSON, pick a random legal move
+      const fallback = legalMoves[Math.floor(Math.random() * legalMoves.length)];
+      return NextResponse.json({ from: fallback.from, to: fallback.to, promotion: fallback.promotion });
     }
 
-    // Validate the move is actually legal
+    // Validate the move is actually legal, fall back to random if not
     const isLegal = legalMoves.some(
       (m) =>
         m.from === parsed.from &&
@@ -99,15 +104,18 @@ If you cannot determine the move, respond with: {"error": "Could not understand 
         (!parsed.promotion || m.promotion === parsed.promotion)
     );
 
-    if (!isLegal) {
-      return NextResponse.json(
-        { error: "AI suggested an illegal move. Please try again." },
-        { status: 422 }
-      );
+    if (!isLegal || parsed.error) {
+      const fallback = legalMoves[Math.floor(Math.random() * legalMoves.length)];
+      return NextResponse.json({ from: fallback.from, to: fallback.to, promotion: fallback.promotion });
     }
 
     return NextResponse.json(parsed);
   } catch (e) {
+    // On any failure, pick a random legal move so the game keeps going
+    if (legalMoves.length > 0) {
+      const fallback = legalMoves[Math.floor(Math.random() * legalMoves.length)];
+      return NextResponse.json({ from: fallback.from, to: fallback.to, promotion: fallback.promotion });
+    }
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json(
       { error: `Failed to interpret move: ${message}` },
