@@ -1,10 +1,11 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
-import { Chessboard } from "react-chessboard";
-import { AntichessGame, type LegalMove, type GameState } from "@/engine/antichess";
+import Board3D from "./Board3D";
+import { AntichessGame, type GameState } from "@/engine/antichess";
 import { findBestMove } from "@/engine/ai";
 import { interpretVoiceMove } from "@/engine/llm";
+import { fetchAndSpeakCommentary } from "@/engine/commentary";
 import { useSpeechRecognition, speak } from "@/hooks/useSpeechRecognition";
 import VoiceControl from "./VoiceControl";
 import MoveHistory from "./MoveHistory";
@@ -34,7 +35,6 @@ export default function GameBoard() {
     isSupported,
   } = useSpeechRecognition();
 
-  // Keep ref in sync
   useEffect(() => {
     gameRef.current = game;
   }, [game]);
@@ -50,7 +50,6 @@ export default function GameBoard() {
 
       setIsAiThinking(true);
 
-      // Use setTimeout to avoid blocking the UI
       setTimeout(() => {
         const bestMove = findBestMove(currentGame, 4);
         if (bestMove) {
@@ -62,6 +61,12 @@ export default function GameBoard() {
           if (result.success) {
             setLastMove({ from: bestMove.from, to: bestMove.to });
             speak(`${result.san}`);
+            fetchAndSpeakCommentary(
+              currentGame.getFen(),
+              result.san,
+              currentGame.getMoveHistory(),
+              true
+            );
           }
         }
         setGame(currentGame);
@@ -72,34 +77,32 @@ export default function GameBoard() {
     [playerColor, updateState]
   );
 
-  // Handle player drag-drop moves
-  function onDrop({ piece, sourceSquare, targetSquare }: { piece: { pieceType: string; position: string; isSparePiece: boolean }; sourceSquare: string; targetSquare: string | null }): boolean {
-    if (!targetSquare) return false;
-    if (gameState.isGameOver) return false;
-    if (gameState.turn !== playerColor) return false;
+  // Handle 3D board moves (click-to-move)
+  const onMove = useCallback(
+    (from: string, to: string, promotion?: Role): boolean => {
+      if (gameState.isGameOver) return false;
+      if (gameState.turn !== playerColor) return false;
 
-    const cloned = game.clone();
+      const cloned = game.clone();
+      const result = cloned.makeMove(from, to, promotion);
+      if (!result.success) return false;
 
-    // Check for promotion
-    let promotion: Role | undefined;
-    const toRank = parseInt(targetSquare[1]);
-    const pieceType = piece.pieceType;
-    const isPawn = pieceType === "wP" || pieceType === "bP";
-    if (isPawn && (toRank === 8 || toRank === 1)) {
-      promotion = "queen"; // Default to queen promotion for drag-drop
-    }
+      setLastMove({ from, to });
+      setGame(cloned);
+      updateState(cloned);
 
-    const result = cloned.makeMove(sourceSquare, targetSquare, promotion);
-    if (!result.success) return false;
+      fetchAndSpeakCommentary(
+        cloned.getFen(),
+        result.san,
+        cloned.getMoveHistory(),
+        false
+      );
 
-    setLastMove({ from: sourceSquare, to: targetSquare });
-    setGame(cloned);
-    updateState(cloned);
-
-    // Trigger AI move
-    setTimeout(() => makeAiMove(cloned), 500);
-    return true;
-  }
+      setTimeout(() => makeAiMove(cloned), 500);
+      return true;
+    },
+    [game, gameState, playerColor, updateState, makeAiMove]
+  );
 
   // Process a text/voice command through the LLM
   const processCommand = useCallback(
@@ -136,6 +139,14 @@ export default function GameBoard() {
           setLastMove({ from: result.from, to: result.to });
           setGame(cloned);
           updateState(cloned);
+
+          fetchAndSpeakCommentary(
+            cloned.getFen(),
+            moveResult.san,
+            cloned.getMoveHistory(),
+            false
+          );
+
           setTimeout(() => makeAiMove(cloned), 500);
         })
         .catch(() => {
@@ -170,36 +181,18 @@ export default function GameBoard() {
     setIsAiThinking(false);
   }
 
-  // Highlight squares for last move
-  const customSquareStyles: Record<string, React.CSSProperties> = {};
-  if (lastMove) {
-    customSquareStyles[lastMove.from] = {
-      backgroundColor: "rgba(255, 255, 0, 0.3)",
-    };
-    customSquareStyles[lastMove.to] = {
-      backgroundColor: "rgba(255, 255, 0, 0.4)",
-    };
-  }
-
   return (
     <div className="flex flex-col lg:flex-row gap-6 items-center lg:items-start justify-center w-full max-w-5xl mx-auto p-4">
       {/* Board + Voice */}
       <div className="flex flex-col items-center gap-4">
-        <div className="w-[min(90vw,480px)] aspect-square">
-          <Chessboard
-            options={{
-              position: gameState.fen,
-              onPieceDrop: onDrop,
-              boardOrientation: playerColor,
-              squareStyles: customSquareStyles,
-              boardStyle: {
-                borderRadius: "8px",
-                boxShadow: "0 4px 20px rgba(0, 0, 0, 0.5)",
-              },
-              darkSquareStyle: { backgroundColor: "#779952" },
-              lightSquareStyle: { backgroundColor: "#edeed1" },
-              animationDurationInMs: 200,
-            }}
+        <div className="w-[min(90vw,480px)]">
+          <Board3D
+            pieces={gameState.pieces}
+            legalMoves={gameState.legalMoves}
+            onMove={onMove}
+            orientation={playerColor}
+            lastMove={lastMove}
+            isInteractive={!isAiThinking && !gameState.isGameOver}
           />
         </div>
 
